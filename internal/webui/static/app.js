@@ -398,8 +398,30 @@ function bindEvents() {
       toast(err.message, 'err');
     }
   };
+  const testTG = async () => {
+    try {
+      // Prefer current form values: save first, then send test.
+      const form = $('#settings-form');
+      if (form) {
+        const payload = readForm(form);
+        payload.min_speed_mbps = Number(payload.min_speed_mbps || 0);
+        payload.max_loss_percent = Number(payload.max_loss_percent || 0);
+        const saved = await api('/api/settings', { method: 'PUT', body: JSON.stringify(payload) });
+        state.settings = saved;
+        fillForm(form, saved);
+      }
+      const res = await api('/api/test/telegram', { method: 'POST', body: '{}' });
+      $('#quick-check').textContent = JSON.stringify(res, null, 2);
+      toast('Telegram 测试消息已发送');
+    } catch (err) {
+      $('#quick-check').textContent = err.message;
+      toast(err.message, 'err');
+    }
+  };
   $('#btn-test-cf').addEventListener('click', testCF);
   $('#btn-settings-test-cf').addEventListener('click', testCF);
+  const tgBtn = $('#btn-settings-test-tg');
+  if (tgBtn) tgBtn.addEventListener('click', testTG);
 
   $('#settings-form').addEventListener('submit', async (e) => {
     e.preventDefault();

@@ -32,7 +32,7 @@ http://服务器IP:8787
 /opt/cfst-panel/panel.json
 ```
 
-程序**只会读安装目录下的 `panel.json`**，不会自动去找你以前目录里的配置。  
+程序**只会读安装目录下的 `panel.json`**，不会自动去找你以前目录里的配置。\n如果旧配置里还写着 `/root/CloudflareST` 这类路径，新版会在启动时自动改到安装目录（避免 `permission denied`）。  
 迁移旧配置：
 
 ```bash
@@ -92,3 +92,49 @@ chmod +x ./cfst-panel-arm64
 ```
 
 数据默认写在可执行文件同目录。
+
+## Telegram 通知
+
+面板原生支持 Telegram。Workers 只做 `api.telegram.org` 中转，不处理业务逻辑。
+
+### 通知格式
+
+```text
+[OK] CFST Panel 任务通知
+状态: success
+触发: manual
+优选IP: 1.2.3.4
+延迟: 20.12 ms
+速度: 35.60 MB/s
+丢包: 0.00%
+DNS更新: 6
+说明: selected 1.2.3.4, updated 6 record(s)
+时间: 2026-07-18 12:00:00
+版本: 0.3.5
+```
+
+### 1. 创建 Bot
+
+1. Telegram 找 @BotFather 创建 bot，拿到 token
+2. 给 bot 发一条消息，获取 chat_id
+
+### 2. 部署 API 中转 Worker
+
+示例文件：`scripts/cf-worker-tg.js`
+
+Cloudflare Dashboard 新建 Worker，粘贴该文件并部署，得到：
+
+```text
+https://tg-api.xxx.workers.dev
+```
+
+### 3. 面板填写
+
+- 启用 Telegram 通知：开
+- Bot Token：你的 token
+- Chat ID：你的 chat id
+- API 中转地址：`https://tg-api.xxx.workers.dev`
+  - 国外服务器可留空，默认直连 `https://api.telegram.org`
+
+点“发送测试”，收到测试消息就说明配置正确。
+

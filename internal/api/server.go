@@ -45,6 +45,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/tasks/", s.auth(s.handleTasksSub))
 	s.mux.HandleFunc("/api/logs", s.auth(s.handleLogs))
 	s.mux.HandleFunc("/api/test/cloudflare", s.auth(s.handleTestCloudflare))
+	s.mux.HandleFunc("/api/test/telegram", s.auth(s.handleTestTelegram))
 
 	// Static frontend with SPA fallback.
 	s.mux.HandleFunc("/", s.handleFrontend)
@@ -300,6 +301,19 @@ func (s *Server) handleTestCloudflare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result, err := s.app.TestCloudflare(r.Context())
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleTestTelegram(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeErr(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	result, err := s.app.TestTelegram(r.Context())
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return

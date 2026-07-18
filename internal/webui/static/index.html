@@ -200,12 +200,17 @@
             </article>
 
             <article class="panel">
-              <div class="panel-head"><h3>通知 Webhook</h3></div>
-              <div class="form-grid">
-                <label class="check"><input name="webhook_enabled" type="checkbox" /><span>启用 Webhook</span></label>
-                <label class="full"><span>Webhook URL</span><input name="webhook_url" placeholder="https://example.com/hook" /></label>
-                <label class="full"><span>Webhook Secret</span><input name="webhook_secret" /></label>
+              <div class="panel-head">
+                <h3>Telegram 通知</h3>
+                <button type="button" id="btn-settings-test-tg" class="btn">发送测试</button>
               </div>
+              <div class="form-grid">
+                <label class="check"><input name="telegram_enabled" type="checkbox" /><span>启用 Telegram 通知</span></label>
+                <label class="full"><span>Bot Token</span><input name="telegram_bot_token" type="password" placeholder="123456:ABCDEF..." /></label>
+                <label class="full"><span>Chat ID</span><input name="telegram_chat_id" placeholder="123456789 或 -100xxxxxxxxxx" /></label>
+                <label class="full"><span>API 中转地址</span><input name="telegram_api_base" placeholder="https://tg-api.xxx.workers.dev" /></label>
+              </div>
+              <p class="help">Workers 只负责反代 <code>api.telegram.org</code>。面板填写 Token / Chat ID / 中转地址后，任务结束自动推送。留空中转地址则默认直连官方 API。</p>
             </article>
 
             <div class="form-actions">

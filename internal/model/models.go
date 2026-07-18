@@ -55,9 +55,19 @@ type Settings struct {
 	CronExpr        string `json:"cron_expr"`
 
 	// Notify
-	WebhookEnabled bool   `json:"webhook_enabled"`
-	WebhookURL     string `json:"webhook_url"`
-	WebhookSecret  string `json:"webhook_secret"`
+	// Telegram native notify. API base can be a Workers reverse proxy of api.telegram.org.
+	TelegramEnabled  bool   `json:"telegram_enabled"`
+	TelegramBotToken string `json:"telegram_bot_token"`
+	TelegramChatID   string `json:"telegram_chat_id"`
+	// TelegramAPIBase examples:
+	//   https://api.telegram.org
+	//   https://tg-api.xxx.workers.dev
+	TelegramAPIBase string `json:"telegram_api_base"`
+
+	// Legacy webhook fields (kept for old panel.json compatibility).
+	WebhookEnabled bool   `json:"webhook_enabled,omitempty"`
+	WebhookURL     string `json:"webhook_url,omitempty"`
+	WebhookSecret  string `json:"webhook_secret,omitempty"`
 
 	UpdatedAt time.Time `json:"updated_at"`
 }

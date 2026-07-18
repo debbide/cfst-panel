@@ -250,6 +250,8 @@ import_panel_json() {
   fi
   install -m 0644 "$PANEL_JSON" "$target"
   ok "imported config: $PANEL_JSON -> $target"
+  # Engine paths like /root/CloudflareST are auto-fixed by the panel on first start
+  # when running as service user cfst (path auto-fix to INSTALL_DIR).
 }
 
 ensure_user() {

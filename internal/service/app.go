@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -22,7 +23,7 @@ import (
 	"github.com/debbide/cfst-panel/internal/store"
 )
 
-const Version = "0.3.4"
+const Version = "0.3.6"
 
 type Scheduler interface {
 	Reload(settings model.Settings) error
@@ -497,6 +498,9 @@ func (a *App) failTask(task *model.Task, message string) {
 	task.Message = message
 	_ = a.store.UpdateTask(*task)
 	a.Log(model.LogError, "task", fmt.Sprintf("task %s failed: %s", task.ID, message))
+	if settings, err := a.cfg.Get(); err == nil {
+		_ = a.notify(settings, *task)
+	}
 }
 
 func (a *App) applyDNS(ctx context.Context, settings model.Settings, ips []string, task *model.Task, appendLog func(string)) (int, error) {
@@ -722,32 +726,156 @@ func limitResults(results []model.SpeedResult, n int) []model.SpeedResult {
 }
 
 func (a *App) notify(settings model.Settings, task model.Task) error {
-	if !settings.WebhookEnabled || strings.TrimSpace(settings.WebhookURL) == "" {
+	if !settings.TelegramEnabled {
 		return nil
 	}
-	payload := map[string]any{
-		"event":   "task_finished",
-		"task":    task,
-		"secret":  settings.WebhookSecret,
-		"version": Version,
+	return a.sendTelegram(settings, buildTelegramMessage(task))
+}
+
+// TestTelegram sends a sample notification with the current panel settings.
+func (a *App) TestTelegram(ctx context.Context) (map[string]any, error) {
+	settings, err := a.cfg.Get()
+	if err != nil {
+		return nil, err
 	}
-	b, _ := json.Marshal(payload)
-	req, err := http.NewRequest(http.MethodPost, settings.WebhookURL, bytes.NewReader(b))
+	if !settings.TelegramEnabled {
+		return nil, fmt.Errorf("telegram notify is disabled")
+	}
+	if strings.TrimSpace(settings.TelegramBotToken) == "" {
+		return nil, fmt.Errorf("telegram bot token is empty")
+	}
+	if strings.TrimSpace(settings.TelegramChatID) == "" {
+		return nil, fmt.Errorf("telegram chat id is empty")
+	}
+	msg := buildTelegramTestMessage()
+	if err := a.sendTelegram(settings, msg); err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"ok":       true,
+		"api_base": normalizeTelegramAPIBase(settings.TelegramAPIBase),
+		"chat_id":  strings.TrimSpace(settings.TelegramChatID),
+	}, nil
+}
+
+func (a *App) sendTelegram(settings model.Settings, text string) error {
+	token := strings.TrimSpace(settings.TelegramBotToken)
+	chatID := strings.TrimSpace(settings.TelegramChatID)
+	if token == "" || chatID == "" {
+		return fmt.Errorf("telegram bot token or chat id is empty")
+	}
+	apiBase := normalizeTelegramAPIBase(settings.TelegramAPIBase)
+	endpoint := strings.TrimRight(apiBase, "/") + "/bot" + token + "/sendMessage"
+	payload := map[string]any{
+		"chat_id":                  chatID,
+		"text":                     text,
+		"parse_mode":               "HTML",
+		"disable_web_page_preview": true,
+	}
+	b, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(b))
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: 12 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		a.Log(model.LogWarn, "webhook", err.Error())
+		a.Log(model.LogWarn, "telegram", err.Error())
 		return err
 	}
 	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	if resp.StatusCode >= 300 {
-		a.Log(model.LogWarn, "webhook", fmt.Sprintf("status %d", resp.StatusCode))
+		msg := strings.TrimSpace(string(body))
+		if msg == "" {
+			msg = fmt.Sprintf("status %d", resp.StatusCode)
+		}
+		a.Log(model.LogWarn, "telegram", msg)
+		return fmt.Errorf("telegram api error: %s", msg)
+	}
+	var parsed struct {
+		OK          bool   `json:"ok"`
+		Description string `json:"description"`
+	}
+	if err := json.Unmarshal(body, &parsed); err == nil && !parsed.OK {
+		msg := strings.TrimSpace(parsed.Description)
+		if msg == "" {
+			msg = "telegram api returned ok=false"
+		}
+		a.Log(model.LogWarn, "telegram", msg)
+		return fmt.Errorf("%s", msg)
 	}
 	return nil
+}
+
+func buildTelegramMessage(task model.Task) string {
+	icon := "[i]"
+	switch task.Status {
+	case model.TaskSuccess:
+		icon = "[OK]"
+	case model.TaskFailed:
+		icon = "[FAIL]"
+	case model.TaskCancelled:
+		icon = "[CANCEL]"
+	}
+	lines := []string{
+		fmt.Sprintf("%s <b>CFST Panel 任务通知</b>", icon),
+		fmt.Sprintf("状态: <code>%s</code>", htmlEscape(string(task.Status))),
+		fmt.Sprintf("触发: <code>%s</code>", htmlEscape(string(task.Trigger))),
+	}
+	if task.SelectedIP != "" {
+		lines = append(lines, fmt.Sprintf("优选IP: <code>%s</code>", htmlEscape(task.SelectedIP)))
+	}
+	if task.SelectedLat > 0 {
+		lines = append(lines, fmt.Sprintf("延迟: <code>%.2f ms</code>", task.SelectedLat))
+	}
+	if task.SelectedSpd > 0 {
+		lines = append(lines, fmt.Sprintf("速度: <code>%.2f MB/s</code>", task.SelectedSpd))
+	}
+	if task.SelectedIP != "" || task.SelectedLoss > 0 {
+		lines = append(lines, fmt.Sprintf("丢包: <code>%.2f%%</code>", task.SelectedLoss))
+	}
+	lines = append(lines, fmt.Sprintf("DNS更新: <code>%d</code>", task.UpdatedCount))
+	if msg := strings.TrimSpace(task.Message); msg != "" {
+		lines = append(lines, "说明: "+htmlEscape(msg))
+	}
+	if task.FinishedAt != nil {
+		lines = append(lines, fmt.Sprintf("时间: <code>%s</code>", task.FinishedAt.Local().Format("2006-01-02 15:04:05")))
+	}
+	lines = append(lines, fmt.Sprintf("版本: <code>%s</code>", Version))
+	return strings.Join(lines, "\n")
+}
+
+func buildTelegramTestMessage() string {
+	return strings.Join([]string{
+		"[TEST] <b>CFST Panel 测试通知</b>",
+		"状态: <code>test</code>",
+		"说明: Telegram 通知配置正常",
+		fmt.Sprintf("时间: <code>%s</code>", time.Now().Local().Format("2006-01-02 15:04:05")),
+		fmt.Sprintf("版本: <code>%s</code>", Version),
+	}, "\n")
+}
+
+func normalizeTelegramAPIBase(base string) string {
+	base = strings.TrimSpace(base)
+	if base == "" {
+		return "https://api.telegram.org"
+	}
+	return strings.TrimRight(base, "/")
+}
+
+func htmlEscape(s string) string {
+	replacer := strings.NewReplacer(
+		"&", "&amp;",
+		"<", "&lt;",
+		">", "&gt;",
+		"\"", "&quot;",
+	)
+	return replacer.Replace(s)
 }
 
 func firstNonEmpty(values ...string) string {

@@ -64,6 +64,10 @@ func DefaultSettings(dataDir string) model.Settings {
 		DryRun:            false,
 		ScheduleEnabled:   false,
 		CronExpr:          "0 */2 * * *",
+		TelegramEnabled:   false,
+		TelegramBotToken:  "",
+		TelegramChatID:    "",
+		TelegramAPIBase:   "https://api.telegram.org",
 		WebhookEnabled:    false,
 		WebhookURL:        "",
 		WebhookSecret:     "",
@@ -165,6 +169,17 @@ func (s *Service) EnsureDefaults() (model.Settings, error) {
 	if settings.CronExpr == "" {
 		settings.CronExpr = def.CronExpr
 	}
+	if settings.TelegramAPIBase == "" {
+		settings.TelegramAPIBase = def.TelegramAPIBase
+	}
+	sanitized, changed := s.sanitizeEnginePaths(settings)
+	if changed {
+		if err := s.Save(sanitized); err != nil {
+			// still return sanitized in-memory values even if persist fails
+			return sanitized, nil
+		}
+		return sanitized, nil
+	}
 	return settings, nil
 }
 
@@ -174,18 +189,145 @@ func (s *Service) Get() (model.Settings, error) {
 
 func (s *Service) Save(settings model.Settings) error {
 	settings.UpdatedAt = time.Now()
-	if settings.CFSTResultFile == "" {
-		settings.CFSTResultFile = filepath.Join(s.dataDir, "result.csv")
-	}
-	if settings.CFSTWorkingDir == "" {
-		settings.CFSTWorkingDir = s.dataDir
-	}
+	sanitized, _ := s.sanitizeEnginePaths(settings)
+	settings = sanitized
 	if err := os.MkdirAll(settings.CFSTWorkingDir, 0o755); err != nil {
 		return err
+	}
+	if settings.CFSTResultFile != "" {
+		_ = os.MkdirAll(filepath.Dir(settings.CFSTResultFile), 0o755)
 	}
 	b, err := json.Marshal(settings)
 	if err != nil {
 		return err
 	}
 	return s.store.SetMeta(settingsKey, string(b))
+}
+
+// sanitizeEnginePaths relocates engine paths into the current data dir when the
+// imported/old config points at an unwritable location (common after moving
+// from /root/... to /opt/cfst-panel while running as user cfst).
+func (s *Service) sanitizeEnginePaths(settings model.Settings) (model.Settings, bool) {
+	def := DefaultSettings(s.dataDir)
+	changed := false
+
+	set := func(dst *string, val string) {
+		if strings.TrimSpace(*dst) != val {
+			*dst = val
+			changed = true
+		}
+	}
+
+	// Working dir must be writable by the service user.
+	wd := strings.TrimSpace(settings.CFSTWorkingDir)
+	if wd == "" || !isWritableDir(wd) || shouldRelocatePath(wd, s.dataDir) {
+		set(&settings.CFSTWorkingDir, s.dataDir)
+	}
+
+	// Binary: prefer existing bundled binary under data dir.
+	bin := strings.TrimSpace(settings.CFSTBinary)
+	switch {
+	case bin == "":
+		set(&settings.CFSTBinary, def.CFSTBinary)
+	case fileExists(bin) && !shouldRelocatePath(bin, s.dataDir):
+		// keep custom existing binary
+	default:
+		candidate := filepath.Join(s.dataDir, filepath.Base(bin))
+		if fileExists(def.CFSTBinary) {
+			set(&settings.CFSTBinary, def.CFSTBinary)
+		} else if fileExists(candidate) {
+			set(&settings.CFSTBinary, candidate)
+		} else if shouldRelocatePath(bin, s.dataDir) || !fileExists(bin) {
+			set(&settings.CFSTBinary, def.CFSTBinary)
+		}
+	}
+
+	// Result file parent must be writable.
+	res := strings.TrimSpace(settings.CFSTResultFile)
+	if res == "" {
+		set(&settings.CFSTResultFile, def.CFSTResultFile)
+	} else if shouldRelocatePath(res, s.dataDir) || !isWritableDir(filepath.Dir(res)) {
+		base := filepath.Base(res)
+		if base == "." || base == string(filepath.Separator) || base == "" {
+			base = "result.csv"
+		}
+		set(&settings.CFSTResultFile, filepath.Join(s.dataDir, base))
+	}
+
+	// IP file: if missing/inaccessible, fall back to data dir defaults when present.
+	ipf := strings.TrimSpace(settings.CFSTIPFile)
+	if ipf == "" {
+		if fileExists(def.CFSTIPFile) {
+			set(&settings.CFSTIPFile, def.CFSTIPFile)
+		}
+	} else if shouldRelocatePath(ipf, s.dataDir) || !fileExists(ipf) {
+		base := filepath.Base(ipf)
+		candidate := filepath.Join(s.dataDir, base)
+		switch {
+		case fileExists(candidate):
+			set(&settings.CFSTIPFile, candidate)
+		case fileExists(def.CFSTIPFile):
+			set(&settings.CFSTIPFile, def.CFSTIPFile)
+		case shouldRelocatePath(ipf, s.dataDir):
+			set(&settings.CFSTIPFile, candidate)
+		}
+	}
+
+	return settings, changed
+}
+
+func fileExists(path string) bool {
+	if strings.TrimSpace(path) == "" {
+		return false
+	}
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+func isWritableDir(path string) bool {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return false
+	}
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		return false
+	}
+	f, err := os.CreateTemp(path, ".cfst-write-test-*")
+	if err != nil {
+		return false
+	}
+	name := f.Name()
+	_ = f.Close()
+	_ = os.Remove(name)
+	return true
+}
+
+func shouldRelocatePath(path, dataDir string) bool {
+	path = strings.TrimSpace(path)
+	dataDir = strings.TrimSpace(dataDir)
+	if path == "" || dataDir == "" {
+		return false
+	}
+	absPath, err1 := filepath.Abs(path)
+	absData, err2 := filepath.Abs(dataDir)
+	if err1 != nil || err2 != nil {
+		return false
+	}
+	absPath = filepath.Clean(absPath)
+	absData = filepath.Clean(absData)
+	sep := string(filepath.Separator)
+	if absPath == absData || strings.HasPrefix(absPath, absData+sep) {
+		return false
+	}
+	// Common migration case: old manual run under /root/...
+	lower := strings.ToLower(strings.ReplaceAll(absPath, "\\", "/"))
+	if strings.HasPrefix(lower, "/root/") || strings.Contains(lower, "/root/cloudflarest") {
+		return true
+	}
+	// If parent dir is not writable, relocate.
+	parent := absPath
+	if st, err := os.Stat(absPath); err == nil && !st.IsDir() {
+		parent = filepath.Dir(absPath)
+	}
+	return !isWritableDir(parent)
 }

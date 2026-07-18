@@ -26,6 +26,27 @@ http://服务器IP:8787
 
 首次登录后请立刻改密码。
 
+配置文件位置：
+
+```text
+/opt/cfst-panel/panel.json
+```
+
+程序**只会读安装目录下的 `panel.json`**，不会自动去找你以前目录里的配置。  
+迁移旧配置：
+
+```bash
+# 方式 1：安装时直接导入
+curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/debbide/cfst-panel/main/scripts/install.sh | \
+  sudo env PANEL_JSON=/旧路径/panel.json bash
+
+# 方式 2：手动拷贝后重启
+sudo systemctl stop cfst-panel
+sudo cp /旧路径/panel.json /opt/cfst-panel/panel.json
+sudo chown cfst:cfst /opt/cfst-panel/panel.json
+sudo systemctl start cfst-panel
+```
+
 ## 可选参数
 
 ```bash

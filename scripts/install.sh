@@ -14,6 +14,7 @@ set -euo pipefail
 #   NO_SERVICE=1            # skip systemd
 #   FORCE=1                 # overwrite existing binary
 #   MIRROR=auto|off|ghfast|ghproxy|moeyy
+#   PANEL_JSON=/path/to/panel.json   # import existing config on install
 
 REPO="${REPO:-debbide/cfst-panel}"
 INSTALL_DIR="${INSTALL_DIR:-/opt/cfst-panel}"
@@ -22,6 +23,7 @@ VERSION="${VERSION:-latest}"
 NO_SERVICE="${NO_SERVICE:-0}"
 FORCE="${FORCE:-0}"
 MIRROR="${MIRROR:-auto}"
+PANEL_JSON="${PANEL_JSON:-}"
 SERVICE_NAME="cfst-panel"
 BIN_NAME="cfst-panel"
 SERVICE_USER="cfst"
@@ -214,14 +216,40 @@ download_asset() {
 install_binary() {
   local src="$1"
   mkdir -p "$INSTALL_DIR"
-  if [[ -f "$INSTALL_DIR/$BIN_NAME" && "$FORCE" != "1" ]]; then
-    if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
-      log "stop service $SERVICE_NAME"
-      systemctl stop "$SERVICE_NAME" || true
-    fi
+  if systemctl is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
+    log "stop service $SERVICE_NAME"
+    systemctl stop "$SERVICE_NAME" || true
   fi
   install -m 0755 "$src" "$INSTALL_DIR/$BIN_NAME"
   ok "installed binary: $INSTALL_DIR/$BIN_NAME"
+}
+
+import_panel_json() {
+  local target="$INSTALL_DIR/panel.json"
+  if [[ -z "$PANEL_JSON" ]]; then
+    if [[ -f "$target" ]]; then
+      ok "keep existing config: $target"
+    else
+      log "no panel.json yet; panel will create default config on first start: $target"
+    fi
+    return 0
+  fi
+  if [[ ! -f "$PANEL_JSON" ]]; then
+    err "PANEL_JSON not found: $PANEL_JSON"
+    exit 1
+  fi
+  # basic sanity check: must look like panel store snapshot
+  if ! grep -q '"meta"' "$PANEL_JSON" 2>/dev/null; then
+    err "PANEL_JSON does not look like panel.json (missing meta). file=$PANEL_JSON"
+    err "please copy the whole panel.json, not a partial settings export"
+    exit 1
+  fi
+  if [[ -f "$target" && "$FORCE" != "1" ]]; then
+    cp -a "$target" "$target.bak.$(date +%Y%m%d%H%M%S)"
+    warn "backup existing config to ${target}.bak.*"
+  fi
+  install -m 0644 "$PANEL_JSON" "$target"
+  ok "imported config: $PANEL_JSON -> $target"
 }
 
 ensure_user() {
@@ -268,6 +296,7 @@ ${GREEN}CFST Panel installed${RESET}
   version : ${TAG}
   arch    : ${ARCH}
   path    : ${INSTALL_DIR}/${BIN_NAME}
+  config  : ${INSTALL_DIR}/panel.json
   listen  : ${LISTEN_ADDR}
   panel   : http://${ip}:${LISTEN_ADDR##*:}
   default : admin / admin123
@@ -318,6 +347,7 @@ main() {
   chmod +x "$OUT"
 
   install_binary "$OUT"
+  import_panel_json
 
   if [[ "$NO_SERVICE" == "1" ]]; then
     warn "NO_SERVICE=1, skip systemd"

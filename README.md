@@ -50,6 +50,38 @@ chmod +x ./cfst-panel-arm64
 - `panel.json`（配置与任务数据）
 - `result.csv`（测速结果）
 
+## 一键安装（推荐）
+
+自动识别 `amd64/arm64`，下载 GitHub Release 最新版，并安装 systemd 服务。
+
+```bash
+# 推荐：走加速镜像拉安装脚本
+curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/debbide/cfst-panel/main/scripts/install.sh | sudo bash
+
+# 或直连 GitHub
+curl -fsSL https://raw.githubusercontent.com/debbide/cfst-panel/main/scripts/install.sh | sudo bash
+```
+
+可选参数：
+
+```bash
+# 指定安装目录 / 监听端口 / 版本
+curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/debbide/cfst-panel/main/scripts/install.sh | \
+  sudo env INSTALL_DIR=/opt/cfst-panel LISTEN_ADDR=0.0.0.0:8787 VERSION=latest bash
+
+# 强制使用某个加速源：ghfast / ghproxy / moeyy / direct
+sudo env MIRROR=ghfast bash install.sh
+
+# 只装二进制，不装 systemd
+sudo env NO_SERVICE=1 bash install.sh
+```
+
+安装后默认：
+- 目录：`/opt/cfst-panel`
+- 面板：`http://服务器IP:8787`
+- 账号：`admin / admin123`
+
+
 ## 面板里怎么配
 
 1. **Cloudflare**：填 API Token、Zone ID

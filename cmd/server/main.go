@@ -56,6 +56,8 @@ func main() {
 		log.Fatalf("open store: %v", err)
 	}
 	defer st.Close()
+	settingsOK, recordCount, taskCount, logCount := st.Stats()
+	log.Printf("config file: %s (settings=%v records=%d tasks=%d logs=%d)", st.Path(), settingsOK, recordCount, taskCount, logCount)
 
 	cfgSvc := config.NewService(st, absData)
 	settings, err := cfgSvc.EnsureDefaults()

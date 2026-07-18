@@ -22,7 +22,7 @@ import (
 	"github.com/debbide/cfst-panel/internal/store"
 )
 
-const Version = "0.3.3"
+const Version = "0.3.4"
 
 type Scheduler interface {
 	Reload(settings model.Settings) error

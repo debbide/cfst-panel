@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CFST Panel</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div id="app">
+    <section id="login-view" class="login-view hidden">
+      <div class="login-card">
+        <div class="brand">
+          <div class="brand-mark">CF</div>
+          <div>
+            <h1>CFST Panel</h1>
+            <p>Cloudflare 优选 IP 测速与自动解析</p>
+          </div>
+        </div>
+        <form id="login-form">
+          <label>
+            <span>用户名</span>
+            <input id="login-user" name="username" autocomplete="username" required />
+          </label>
+          <label>
+            <span>密码</span>
+            <input id="login-pass" name="password" type="password" autocomplete="current-password" required />
+          </label>
+          <button type="submit" class="btn primary block">登录</button>
+          <p id="login-error" class="error-text"></p>
+        </form>
+      </div>
+    </section>
+
+    <section id="main-view" class="main-view hidden">
+      <aside class="sidebar">
+        <div class="sidebar-brand">
+          <div class="brand-mark">CF</div>
+          <div>
+            <strong>CFST Panel</strong>
+            <small id="version-text">v0.1.0</small>
+          </div>
+        </div>
+        <nav class="nav">
+          <button data-page="dashboard" class="nav-item active">总览</button>
+          <button data-page="settings" class="nav-item">完整配置</button>
+          <button data-page="records" class="nav-item">DNS 记录</button>
+          <button data-page="tasks" class="nav-item">任务历史</button>
+          <button data-page="logs" class="nav-item">运行日志</button>
+        </nav>
+        <div class="sidebar-foot">
+          <button id="btn-logout" class="btn ghost block">退出登录</button>
+        </div>
+      </aside>
+
+      <main class="content">
+        <header class="topbar">
+          <div>
+            <h2 id="page-title">总览</h2>
+            <p id="page-subtitle">查看服务状态、最近测速与解析结果</p>
+          </div>
+          <div class="topbar-actions">
+            <button id="btn-run-task" class="btn primary">立即测速并更新</button>
+            <button id="btn-cancel-task" class="btn danger">取消任务</button>
+            <button id="btn-refresh" class="btn">刷新</button>
+          </div>
+        </header>
+
+        <div id="toast" class="toast hidden"></div>
+
+        <section id="page-dashboard" class="page">
+          <div class="stat-grid">
+            <article class="stat-card">
+              <span>服务状态</span>
+              <strong id="stat-uptime">-</strong>
+              <small id="stat-listen">-</small>
+            </article>
+            <article class="stat-card">
+              <span>CloudflareST</span>
+              <strong id="stat-cfst">-</strong>
+              <small id="stat-cfst-meta">-</small>
+              <small id="stat-cfst-path">-</small>
+            </article>
+            <article class="stat-card">
+              <span>定时任务</span>
+              <strong id="stat-schedule">-</strong>
+              <small id="stat-next-run">-</small>
+            </article>
+            <article class="stat-card">
+              <span>DNS 记录</span>
+              <strong id="stat-records">-</strong>
+              <small id="stat-running">-</small>
+            </article>
+          </div>
+
+          <div class="panel-grid">
+            <article class="panel">
+              <div class="panel-head">
+                <h3>最近任务</h3>
+              </div>
+              <div id="last-task" class="kv-list empty">暂无任务</div>
+            </article>
+            <article class="panel">
+              <div class="panel-head">
+                <h3>快速检查</h3>
+              </div>
+              <div class="stack">
+                <button id="btn-test-cf" class="btn">测试 Cloudflare API</button>
+                <pre id="quick-check" class="code-box">等待操作…</pre>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section id="page-settings" class="page hidden">
+          <form id="settings-form" class="settings-form">
+            <article class="panel">
+              <div class="panel-head"><h3>系统设置</h3></div>
+              <div class="form-grid">
+                <label><span>监听地址</span><input name="listen_addr" /></label>
+                <label><span>时区</span><input name="timezone" placeholder="Asia/Shanghai" /></label>
+                <label><span>面板用户名</span><input name="panel_user" /></label>
+                <label><span>面板密码</span><input name="panel_pass" type="password" /></label>
+                <label><span>会话时长（小时）</span><input name="session_hours" type="number" min="1" /></label>
+              </div>
+            </article>
+
+            <article class="panel">
+              <div class="panel-head">
+                <h3>Cloudflare</h3>
+                <button type="button" id="btn-settings-test-cf" class="btn">测试连接</button>
+              </div>
+              <div class="form-grid">
+                <label class="full"><span>API Token</span><input name="cf_api_token" type="password" placeholder="Zone.DNS Edit 权限" /></label>
+                <label><span>Zone ID</span><input name="cf_zone_id" /></label>
+                <label><span>Zone 名称</span><input name="cf_zone_name" placeholder="example.com" /></label>
+                <label><span>默认记录类型</span>
+                  <select name="cf_record_type">
+                    <option value="A" selected>A (IPv4，默认)</option>
+                    <option value="AAAA">AAAA (IPv6，可选)</option>
+                  </select>
+                </label>
+                <label><span>默认 TTL</span><input name="cf_ttl" type="number" min="1" /></label>
+              </div>
+            </article>
+
+            <article class="panel">
+              <div class="panel-head"><h3>测速引擎（CloudflareST）</h3></div>
+              <div class="form-grid">
+                <p class="hint full">默认已内置官方 CloudflareST（v2.3.5）。启动后会自动解压到数据目录，一般无需手动填写路径。</p>
+                <label class="full"><span>可执行文件路径</span><input name="cfst_binary" placeholder="默认：数据目录/CloudflareST" /></label>
+                <label><span>IP 协议</span>
+                  <select name="cfst_ip_version">
+                    <option value="4" selected>IPv4（默认）</option>
+                    <option value="6">IPv6（可选）</option>
+                    <option value="both">IPv4 + IPv6（可选）</option>
+                  </select>
+                </label>
+                <label class="full"><span>IP 文件路径（-f）</span><input name="cfst_ip_file" placeholder="默认留空：IPv4 用 ip.txt，IPv6 用 ipv6.txt" /></label>
+                <label class="full"><span>优选 IP 列表 URL（推荐）</span><input name="cfst_ip_list_url" placeholder="例如 https://cf.090227.xyz/ct?ips=20" /></label>
+                <p class="hint full">优先从这个地址拉取别人筛过的候选 IP，再在你本机复测。支持 IP 或 IP#备注 格式。留空才使用本地 IP 文件/全量段。</p>
+                <p class="hint full">默认只测 IPv4，适合没有 IPv6 的机器。需要时再手动改成 IPv6 或双栈；IPv6 会用 ipv6.txt 并更新 AAAA 记录。</p>
+                <label class="full"><span>结果 CSV 路径（-o）</span><input name="cfst_result_file" /></label>
+                <label class="full"><span>工作目录</span><input name="cfst_working_dir" /></label>
+                <label><span>延迟测速线程数（-n，家用建议80）</span><input name="cfst_threads" type="number" min="1" /></label>
+                <label><span>每个IP延迟测速次数（-t，建议4）</span><input name="cfst_delay" type="number" min="1" /></label>
+                <label><span>随机抽样 IP 数（用优选URL时填0；本地全量段时建议2000）</span><input name="cfst_sample_count" type="number" min="0" /></label>
+                <label><span>下载测速数量（-dn）</span><input name="cfst_test_count" type="number" min="1" /></label>
+                <label><span>端口（-tp）</span><input name="cfst_port" type="number" min="1" /></label>
+                <label class="full"><span>测速地址（-url）</span><input name="cfst_speed_test_url" placeholder="可选" /></label>
+                <label><span>超时秒数</span><input name="cfst_timeout_sec" type="number" min="30" /></label>
+                <label class="check"><input name="cfst_enable_httping" type="checkbox" /><span>启用 HTTPing（-httping）</span></label>
+                <label class="full"><span>额外参数</span><input name="cfst_extra_args" placeholder="例如 -dd -p 10" /></label>
+              </div>
+            </article>
+
+            <article class="panel">
+              <div class="panel-head"><h3>优选策略</h3></div>
+              <div class="form-grid">
+                <label><span>最大延迟 ms</span><input name="max_latency_ms" type="number" min="0" /></label>
+                <label><span>最低速度 MB/s</span><input name="min_speed_mbps" type="number" min="0" step="0.1" /></label>
+                <label><span>最大丢包 %</span><input name="max_loss_percent" type="number" min="0" step="0.1" /></label>
+                <label><span>保留 Top N</span><input name="top_n" type="number" min="1" /></label>
+                <label><span>解析 IP 数量</span><input name="resolve_ip_count" type="number" min="1" max="20" /></label>
+                <p class="hint full">每个域名会同步解析到前 N 个优选 IP（默认 6）。同名同类型多余记录会被清理，降低单 IP 挂掉就全断的风险。</p>
+                <label class="check"><input name="prefer_lower_loss" type="checkbox" /><span>优先更低丢包</span></label>
+                <label class="check"><input name="update_only_better" type="checkbox" /><span>仅在更好时更新</span></label>
+                <label class="check"><input name="force_update" type="checkbox" /><span>强制更新 DNS</span></label>
+                <label class="check"><input name="dry_run" type="checkbox" /><span>演练模式（不改 DNS）</span></label>
+              </div>
+            </article>
+
+            <article class="panel">
+              <div class="panel-head"><h3>定时任务</h3></div>
+              <div class="form-grid">
+                <label class="check"><input name="schedule_enabled" type="checkbox" /><span>启用定时测速</span></label>
+                <label><span>Cron 表达式</span><input name="cron_expr" placeholder="0 */2 * * *" /></label>
+              </div>
+              <p class="help">支持 5 段 cron：分 时 日 月 周。例如 <code>0 */2 * * *</code> 表示每 2 小时整点执行。</p>
+            </article>
+
+            <article class="panel">
+              <div class="panel-head"><h3>通知 Webhook</h3></div>
+              <div class="form-grid">
+                <label class="check"><input name="webhook_enabled" type="checkbox" /><span>启用 Webhook</span></label>
+                <label class="full"><span>Webhook URL</span><input name="webhook_url" placeholder="https://example.com/hook" /></label>
+                <label class="full"><span>Webhook Secret</span><input name="webhook_secret" /></label>
+              </div>
+            </article>
+
+            <div class="form-actions">
+              <button type="submit" class="btn primary">保存全部配置</button>
+              <button type="button" id="btn-reload-settings" class="btn">重新加载</button>
+            </div>
+          </form>
+        </section>
+
+        <section id="page-records" class="page hidden">
+          <div class="panel-grid records-layout">
+            <article class="panel">
+              <div class="panel-head"><h3>添加 / 编辑 DNS 记录</h3></div>
+              <form id="record-form" class="form-grid">
+                <input type="hidden" name="id" />
+                <label class="full"><span>域名 / 主机名</span><input name="name" placeholder="cf.example.com" required /></label>
+                <label><span>类型</span>
+                  <select name="type">
+                    <option value="A" selected>A (IPv4，默认)</option>
+                    <option value="AAAA">AAAA (IPv6，可选)</option>
+                  </select>
+                </label>
+                <label><span>TTL</span><input name="ttl" type="number" min="1" value="1" /></label>
+                <label class="full"><span>当前解析 IP</span><input name="content" placeholder="测速后自动回写" /></label>
+                <label class="full"><span>Cloudflare Record ID</span><input name="cf_record_id" placeholder="可留空，首次更新时自动匹配/创建" /></label>
+                <label class="full"><span>备注</span><input name="note" /></label>
+                <label class="check"><input name="enabled" type="checkbox" checked /><span>启用自动更新</span></label>
+                <div class="form-actions full">
+                  <button type="submit" class="btn primary">保存记录</button>
+                  <button type="button" id="btn-reset-record" class="btn">清空表单</button>
+                </div>
+              </form>
+            </article>
+
+            <article class="panel">
+              <div class="panel-head"><h3>记录列表</h3></div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>域名</th>
+                      <th>IP</th>
+                      <th>状态</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody id="records-body"></tbody>
+                </table>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section id="page-tasks" class="page hidden">
+          <article class="panel">
+            <div class="panel-head"><h3>任务列表</h3></div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>时间</th>
+                    <th>状态</th>
+                    <th>触发</th>
+                    <th>优选 IP</th>
+                    <th>延迟</th>
+                    <th>速度</th>
+                    <th>更新数</th>
+                    <th>详情</th>
+                  </tr>
+                </thead>
+                <tbody id="tasks-body"></tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="panel">
+            <div class="panel-head">
+              <h3>任务详情</h3>
+              <span id="task-detail-id" class="muted"></span>
+            </div>
+            <div id="task-detail" class="kv-list empty">选择一条任务查看结果与日志</div>
+            <pre id="task-log" class="code-box">-</pre>
+          </article>
+        </section>
+
+        <section id="page-logs" class="page hidden">
+          <article class="panel">
+            <div class="panel-head">
+              <h3>系统日志</h3>
+              <div class="row-actions">
+                <select id="log-level">
+                  <option value="">全部</option>
+                  <option value="info">info</option>
+                  <option value="warn">warn</option>
+                  <option value="error">error</option>
+                </select>
+                <button id="btn-clear-logs" class="btn danger">清空日志</button>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>时间</th>
+                    <th>级别</th>
+                    <th>来源</th>
+                    <th>内容</th>
+                  </tr>
+                </thead>
+                <tbody id="logs-body"></tbody>
+              </table>
+            </div>
+          </article>
+        </section>
+      </main>
+    </section>
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>

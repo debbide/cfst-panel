@@ -1,0 +1,14 @@
+/data/
+/bin/
+/cfst-panel
+/cfst-panel.exe
+/dist/
+/.gopath/
+/.gocache/
+*.db
+*.db-shm
+*.db-wal
+panel.json
+result.csv
+.DS_Store
+*.log

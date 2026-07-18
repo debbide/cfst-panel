@@ -1,0 +1,17 @@
+[Unit]
+Description=CFST Panel - Cloudflare speed test and DNS updater
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=cfst
+Group=cfst
+WorkingDirectory=/opt/cfst-panel
+ExecStart=/opt/cfst-panel/cfst-panel --addr 0.0.0.0:8787
+Restart=on-failure
+RestartSec=3
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
